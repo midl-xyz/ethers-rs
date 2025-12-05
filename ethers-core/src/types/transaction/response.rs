@@ -14,6 +14,12 @@ use rlp::{Decodable, DecoderError, RlpStream};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
+const MIDL_PUBLIC_KEY_LENGTH: usize = 32;
+
+fn is_zero_bytes(slice: &[u8]) -> bool {
+    slice.iter().all(|b| *b == 0)
+}
+
 /// Details of a signed transaction
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Transaction {
@@ -112,6 +118,15 @@ pub struct Transaction {
     /// baseFeePerGas + maxPriorityFeePerGas is “refunded” to the user.
     pub max_fee_per_gas: Option<U256>,
 
+    #[serde(rename = "btcTxHash", default, skip_serializing_if = "Option::is_none")]
+    pub btc_tx_hash: Option<H256>,
+
+    #[serde(rename = "publicKey", default, skip_serializing_if = "Option::is_none")]
+    pub public_key: Option<Bytes>,
+
+    #[serde(rename = "btcAddressByte", default, skip_serializing_if = "Option::is_none")]
+    pub btc_address_byte: Option<U256>,
+
     #[serde(rename = "chainId", default, skip_serializing_if = "Option::is_none")]
     pub chain_id: Option<U256>,
 
@@ -130,6 +145,22 @@ impl Transaction {
         rlp_opt(rlp, &self.fee_currency);
         rlp_opt(rlp, &self.gateway_fee_recipient);
         rlp_opt(rlp, &self.gateway_fee);
+    }
+
+    fn midl_access_list(&self) -> AccessList {
+        self.access_list.clone().unwrap_or_else(|| AccessList(vec![]))
+    }
+
+    fn midl_btc_tx_hash(&self) -> H256 {
+        self.btc_tx_hash.unwrap_or_default()
+    }
+
+    fn midl_public_key(&self) -> Bytes {
+        self.public_key.clone().unwrap_or_else(|| Bytes::from(vec![0u8; MIDL_PUBLIC_KEY_LENGTH]))
+    }
+
+    fn midl_btc_address_byte(&self) -> U256 {
+        self.btc_address_byte.unwrap_or_default()
     }
 
     pub fn hash(&self) -> H256 {
@@ -170,6 +201,27 @@ impl Transaction {
                 rlp.append(&self.value);
                 rlp.append(&self.input.as_ref());
                 rlp_opt_list(&mut rlp, &self.access_list);
+                if let Some(chain_id) = self.chain_id {
+                    rlp.append(&normalize_v(self.v.as_u64(), U64::from(chain_id.as_u64())));
+                }
+            }
+            Some(x) if x == U64::from(7) => {
+                rlp_opt(&mut rlp, &self.chain_id);
+                rlp.append(&self.nonce);
+                rlp_opt(&mut rlp, &self.gas_price);
+                rlp.append(&self.gas);
+
+                #[cfg(feature = "celo")]
+                self.inject_celo_metadata(&mut rlp);
+
+                rlp_opt(&mut rlp, &self.to);
+                rlp.append(&self.value);
+                rlp.append(&self.input.as_ref());
+                rlp.append(&self.midl_btc_tx_hash());
+                rlp.append(&self.midl_public_key().as_ref());
+                rlp.append(&self.midl_btc_address_byte());
+                let access_list = self.midl_access_list();
+                rlp.append(&access_list);
                 if let Some(chain_id) = self.chain_id {
                     rlp.append(&normalize_v(self.v.as_u64(), U64::from(chain_id.as_u64())));
                 }
@@ -256,6 +308,46 @@ impl Transaction {
         self.input = Bytes::from(input.to_vec());
         *offset += 1;
         self.access_list = Some(rlp.val_at(*offset)?);
+        *offset += 1;
+        Ok(())
+    }
+
+    fn decode_base_midl(
+        &mut self,
+        rlp: &rlp::Rlp,
+        offset: &mut usize,
+    ) -> Result<(), DecoderError> {
+        self.chain_id = Some(rlp.val_at(*offset)?);
+        *offset += 1;
+        self.nonce = rlp.val_at(*offset)?;
+        *offset += 1;
+        self.gas_price = Some(rlp.val_at(*offset)?);
+        *offset += 1;
+        self.gas = rlp.val_at(*offset)?;
+        *offset += 1;
+        self.to = Some(rlp.val_at(*offset)?);
+        *offset += 1;
+        self.value = rlp.val_at(*offset)?;
+        *offset += 1;
+        let input = rlp::Rlp::new(rlp.at(*offset)?.as_raw()).data()?;
+        self.input = Bytes::from(input.to_vec());
+        *offset += 1;
+        let btc_tx_hash: H256 = rlp.val_at(*offset)?;
+        self.btc_tx_hash = (btc_tx_hash != H256::zero()).then_some(btc_tx_hash);
+        *offset += 1;
+        let public_key_bytes = rlp::Rlp::new(rlp.at(*offset)?.as_raw()).data()?.to_vec();
+        self.public_key =
+            (!is_zero_bytes(&public_key_bytes)).then_some(Bytes::from(public_key_bytes));
+        *offset += 1;
+        let btc_address_byte: U256 = rlp.val_at(*offset)?;
+        self.btc_address_byte = (!btc_address_byte.is_zero()).then_some(btc_address_byte);
+        *offset += 1;
+        let al = rlp::Rlp::new(rlp.at(*offset)?.as_raw()).data()?;
+        let access_list = match al.len() {
+            0 => AccessList(vec![]),
+            _ => rlp.val_at(*offset)?,
+        };
+        self.access_list = Some(access_list);
         *offset += 1;
         Ok(())
     }
@@ -374,6 +466,10 @@ impl Decodable for Transaction {
                 0x02 => {
                     txn.decode_base_eip1559(&rest, &mut offset)?;
                     txn.transaction_type = Some(2u64.into());
+                }
+                 0x07 => {
+                    txn.decode_base_midl(&rest, &mut offset)?;
+                    txn.transaction_type = Some(7u64.into());
                 }
                 _ => return Err(DecoderError::Custom("invalid tx type")),
             }

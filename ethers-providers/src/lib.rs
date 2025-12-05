@@ -387,6 +387,17 @@ pub trait Middleware: Sync + Send + Debug {
         self.inner().send_raw_transaction(tx).await.map_err(FromErr::from)
     }
 
+    async fn send_btc_transactions<'a>(
+        &'a self,
+        serialized_transactions: Vec<Bytes>,
+        btc_transaction: Bytes,
+    ) -> Result<Vec<PendingTransaction<'a, Self::Provider>>, Self::Error> {
+        self.inner()
+            .send_btc_transactions(serialized_transactions, btc_transaction)
+            .await
+            .map_err(FromErr::from)
+    }
+
     /// This returns true if either the middleware stack contains a `SignerMiddleware`, or the
     /// JSON-RPC provider has an unlocked key that can sign using the `eth_sign` call. If none of
     /// the above conditions are met, then the middleware stack is not capable of signing data.

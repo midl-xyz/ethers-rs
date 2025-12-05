@@ -1,5 +1,5 @@
 //! Transaction types
-use super::{decode_to, extract_chain_id, rlp_opt, NUM_TX_FIELDS};
+use super::{decode_to, extract_chain_id, midl::MidlTransactionRequest, rlp_opt, NUM_TX_FIELDS};
 use crate::{
     types::{
         Address, Bytes, NameOrAddress, Signature, SignatureError, Transaction, H256, U256, U64,
@@ -147,6 +147,11 @@ impl TransactionRequest {
     pub fn chain_id<T: Into<U64>>(mut self, chain_id: T) -> Self {
         self.chain_id = Some(chain_id.into());
         self
+    }
+
+    /// Converts this request into a Midl typed transaction wrapper.
+    pub fn into_midl(self) -> MidlTransactionRequest {
+        MidlTransactionRequest::new(self)
     }
 
     /// Hashes the transaction's data with the provided chain id

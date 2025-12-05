@@ -51,6 +51,8 @@ pub enum LedgerError {
     /// Error when signing EIP712 struct with not compatible Ledger ETH app
     #[error("Ledger ethereum app requires at least version: {0:?}")]
     UnsupportedAppVersion(String),
+    #[error("Unsupported transaction type: {0}")]
+    UnsupportedTxType(&'static str),
 }
 
 pub const P1_FIRST: u8 = 0x00;

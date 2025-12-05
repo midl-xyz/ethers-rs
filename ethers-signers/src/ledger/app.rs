@@ -122,6 +122,9 @@ impl LedgerEthereum {
             // in the case we don't have a chain_id, let's use the signer chain id instead
             tx_with_chain.set_chain_id(self.chain_id);
         }
+        if matches!(tx, TypedTransaction::Midl(_)) {
+            return Err(LedgerError::UnsupportedTxType("midl"));
+        }
         let mut payload = Self::path_to_bytes(&self.derivation);
         payload.extend_from_slice(tx_with_chain.rlp().as_ref());
 
@@ -144,6 +147,7 @@ impl LedgerEthereum {
                     (ecc_parity % 2 != 1) as u64
                 }
                 TypedTransaction::Legacy(_) => eip155_chain_id + ecc_parity,
+                TypedTransaction::Midl(_) => unreachable!("midl transactions handled earlier"),
             };
         }
 

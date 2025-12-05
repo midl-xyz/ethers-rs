@@ -154,6 +154,7 @@ impl MonitoredTransaction {
                 updated_tx.max_priority_fee_per_gas = Some(new_max_priority_fee_per_gas);
                 Some(updated_tx.into())
             }
+            TypedTransaction::Midl(_) => None,
         }
     }
 }

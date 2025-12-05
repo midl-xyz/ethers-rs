@@ -185,6 +185,9 @@ impl TrezorEthereum {
                 transaction.max_priority_fee_per_gas,
                 transaction.access_list,
             )?,
+            TypedTransaction::Midl(_) => {
+                return Err(TrezorError::UnsupportedTxType("midl"));
+            }
         };
 
         Ok(Signature { r: signature.r, s: signature.s, v: signature.v })
