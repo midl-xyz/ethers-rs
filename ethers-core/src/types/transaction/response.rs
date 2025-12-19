@@ -260,6 +260,11 @@ impl Transaction {
                 encoded.extend_from_slice(rlp_bytes.as_ref());
                 encoded.into()
             }
+            Some(x) if x == U64::from(7) => {
+                encoded.extend_from_slice(&[0x7]);
+                encoded.extend_from_slice(rlp_bytes.as_ref());
+                encoded.into()
+            }
             _ => rlp_bytes,
         }
     }
@@ -689,6 +694,9 @@ mod tests {
                 16,
             )
             .unwrap(),
+            btc_tx_hash: None,
+            public_key: None,
+            btc_address_byte: None,
             other: Default::default(),
         };
         println!("0x{}", hex::encode(&tx.rlp()));
@@ -733,6 +741,9 @@ mod tests {
                 16,
             )
             .unwrap(),
+            btc_tx_hash: None,
+            public_key: None,
+            btc_address_byte: None,
             other: Default::default(),
         };
         println!("0x{}", hex::encode(&tx.rlp()));
@@ -768,6 +779,9 @@ mod tests {
             access_list: None,
             max_fee_per_gas: None,
             max_priority_fee_per_gas: None,
+            btc_tx_hash: None,
+            public_key: None,
+            btc_address_byte: None,
             other: Default::default()
         };
         assert_eq!(
@@ -814,6 +828,9 @@ mod tests {
             max_priority_fee_per_gas: Some(1500000000.into()),
             max_fee_per_gas: Some(1500000009.into()),
             chain_id: Some(5.into()),
+            btc_tx_hash: None,
+            public_key: None,
+            btc_address_byte: None,
             other: Default::default(),
         };
         assert_eq!(
@@ -861,6 +878,9 @@ mod tests {
             max_priority_fee_per_gas: Some(1500000000.into()),
             max_fee_per_gas: Some(1500000009.into()),
             chain_id: Some(5.into()),
+            btc_tx_hash: None,
+            public_key: None,
+            btc_address_byte: None,
             other: Default::default(),
         };
 
@@ -924,6 +944,9 @@ mod tests {
             access_list: None,
             max_fee_per_gas: None,
             max_priority_fee_per_gas: None,
+            btc_tx_hash: None,
+            public_key: None,
+            btc_address_byte: None,
             other: Default::default()
         };
 
@@ -959,6 +982,9 @@ mod tests {
             access_list: None,
             max_fee_per_gas: None,
             max_priority_fee_per_gas: None,
+            btc_tx_hash: None,
+            public_key: None,
+            btc_address_byte: None,
             other: Default::default()
         };
 
@@ -1012,6 +1038,9 @@ mod tests {
             max_priority_fee_per_gas: Some(1500000000.into()),
             max_fee_per_gas: Some(1500000009.into()),
             chain_id: Some(5.into()),
+            btc_tx_hash: None,
+            public_key: None,
+            btc_address_byte: None,
             other: Default::default(),
         };
 

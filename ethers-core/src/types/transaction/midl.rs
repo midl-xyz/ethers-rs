@@ -33,30 +33,130 @@ pub enum MidlRequestError {
 }
 
 /// Midl (type 0x07) transaction.
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct MidlTransactionRequest {
-    #[serde(flatten)]
     pub tx: TransactionRequest,
-    #[serde(
-        rename = "btcTxHash",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
     pub btc_tx_hash: Option<H256>,
-    #[serde(
-        rename = "publicKey",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
     pub public_key: Option<Bytes>,
-    #[serde(
-        rename = "btcAddressByte",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    pub btc_address_byte: Option<U256>,
+    pub access_list: AccessList,
+}
+
+// TransactionRequest has `chain_id` marked `#[serde(skip_serializing)]` globally.
+// For Midl transactions, we *do* want `chainId` to roundtrip in JSON (and other serde formats),
+// so we provide a custom serde implementation that includes it.
+#[derive(Serialize, Deserialize)]
+struct TransactionRequestSerde {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<crate::types::Address>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<crate::types::NameOrAddress>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gas: Option<U256>,
+    #[serde(rename = "gasPrice")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gas_price: Option<U256>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<U256>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Bytes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nonce: Option<U256>,
+    #[serde(default, rename = "chainId", skip_serializing_if = "Option::is_none")]
+    pub chain_id: Option<U64>,
+
+    /////////////////  Celo-specific transaction fields /////////////////
+    #[cfg(feature = "celo")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fee_currency: Option<crate::types::Address>,
+    #[cfg(feature = "celo")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateway_fee_recipient: Option<crate::types::Address>,
+    #[cfg(feature = "celo")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateway_fee: Option<U256>,
+}
+
+impl From<&TransactionRequest> for TransactionRequestSerde {
+    fn from(tx: &TransactionRequest) -> Self {
+        Self {
+            from: tx.from,
+            to: tx.to.clone(),
+            gas: tx.gas,
+            gas_price: tx.gas_price,
+            value: tx.value,
+            data: tx.data.clone(),
+            nonce: tx.nonce,
+            chain_id: tx.chain_id,
+            #[cfg(feature = "celo")]
+            fee_currency: tx.fee_currency,
+            #[cfg(feature = "celo")]
+            gateway_fee_recipient: tx.gateway_fee_recipient,
+            #[cfg(feature = "celo")]
+            gateway_fee: tx.gateway_fee,
+        }
+    }
+}
+
+impl From<TransactionRequestSerde> for TransactionRequest {
+    fn from(tx: TransactionRequestSerde) -> Self {
+        Self {
+            from: tx.from,
+            to: tx.to,
+            gas: tx.gas,
+            gas_price: tx.gas_price,
+            value: tx.value,
+            data: tx.data,
+            nonce: tx.nonce,
+            chain_id: tx.chain_id,
+            #[cfg(feature = "celo")]
+            fee_currency: tx.fee_currency,
+            #[cfg(feature = "celo")]
+            gateway_fee_recipient: tx.gateway_fee_recipient,
+            #[cfg(feature = "celo")]
+            gateway_fee: tx.gateway_fee,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct MidlTransactionRequestSerde {
+    #[serde(flatten)]
+    pub tx: TransactionRequestSerde,
+    #[serde(rename = "btcTxHash", default, skip_serializing_if = "Option::is_none")]
+    pub btc_tx_hash: Option<H256>,
+    #[serde(rename = "publicKey", default, skip_serializing_if = "Option::is_none")]
+    pub public_key: Option<Bytes>,
+    #[serde(rename = "btcAddressByte", default, skip_serializing_if = "Option::is_none")]
     pub btc_address_byte: Option<U256>,
     #[serde(default)]
     pub access_list: AccessList,
+}
+
+impl Serialize for MidlTransactionRequest {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        MidlTransactionRequestSerde {
+            tx: (&self.tx).into(),
+            btc_tx_hash: self.btc_tx_hash,
+            public_key: self.public_key.clone(),
+            btc_address_byte: self.btc_address_byte,
+            access_list: self.access_list.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for MidlTransactionRequest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let de = MidlTransactionRequestSerde::deserialize(deserializer)?;
+        Ok(Self {
+            tx: de.tx.into(),
+            btc_tx_hash: de.btc_tx_hash,
+            public_key: de.public_key,
+            btc_address_byte: de.btc_address_byte,
+            access_list: de.access_list,
+        })
+    }
 }
 
 impl MidlTransactionRequest {
