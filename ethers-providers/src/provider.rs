@@ -364,8 +364,9 @@ impl<P: JsonRpcClient> Middleware for Provider<P> {
                 };
             }
             TypedTransaction::Midl(inner) => {
+                // MIDL uses a fixed static gas price of 1,000,000 wei (1 gwei)
                 if inner.tx.gas_price.is_none() {
-                    inner.tx.gas_price = Some(U256::zero());
+                    inner.tx.gas_price = Some(U256::from(1_000_000u64));
                 }
             }
         }
@@ -657,10 +658,10 @@ impl<P: JsonRpcClient> Middleware for Provider<P> {
             .into_iter()
             .map(|tx| utils::serialize(&tx))
             .collect::<Vec<_>>();
-        let btc_transaction = utils::serialize(&btc_transaction);
+        let btc_transaction_hex = hex::encode(btc_transaction.as_ref());
         let params = [
             Value::Array(serialized_transactions),
-            btc_transaction,
+            Value::String(btc_transaction_hex),
         ];
         let tx_hashes: Vec<TxHash> =
             self.request("eth_sendBTCTransactions", params).await?;
