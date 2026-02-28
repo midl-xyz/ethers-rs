@@ -46,6 +46,8 @@ pub enum TrezorError {
     #[error(transparent)]
     /// Error when converting a semver requirement
     SemVerError(#[from] semver::Error),
+    #[error("Unsupported transaction type: {0}")]
+    UnsupportedTxType(&'static str),
     /// Error when signing EIP712 struct with not compatible Trezor ETH app
     #[error("Trezor ethereum app requires at least version: {0:?}")]
     UnsupportedFirmwareVersion(String),
@@ -135,6 +137,7 @@ impl TrezorTransaction {
                     access_list,
                 })
             }
+            TypedTransaction::Midl(_) => Err(TrezorError::UnsupportedTxType("midl")),
         }
     }
 }

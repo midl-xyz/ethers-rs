@@ -20,7 +20,9 @@ use async_trait::async_trait;
 use ethers_core::{
     abi::{self, Detokenize, ParamType},
     types::{
-        transaction::{eip2718::TypedTransaction, eip2930::AccessListWithGasUsed},
+        transaction::{
+            eip2718::TypedTransaction, eip2930::AccessListWithGasUsed, midl::MIDL_DEFAULT_GAS_LIMIT,
+        },
         Address, Block, BlockId, BlockNumber, BlockTrace, Bytes, EIP1186ProofResponse, FeeHistory,
         Filter, FilterBlockOption, GethDebugTracingOptions, GethTrace, Log, NameOrAddress,
         Selector, Signature, Trace, TraceFilter, TraceType, Transaction, TransactionReceipt,
@@ -30,6 +32,7 @@ use ethers_core::{
 };
 use hex::FromHex;
 use serde::{de::DeserializeOwned, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 use url::{ParseError, Url};
 
@@ -360,13 +363,25 @@ impl<P: JsonRpcClient> Middleware for Provider<P> {
                     inner.max_priority_fee_per_gas = Some(max_priority_fee_per_gas);
                 };
             }
+            TypedTransaction::Midl(inner) => {
+                // MIDL uses a fixed static gas price of 1,000,000 wei (1 gwei)
+                if inner.tx.gas_price.is_none() {
+                    inner.tx.gas_price = Some(U256::from(1_000_000u64));
+                }
+            }
         }
+
+        let is_midl = matches!(tx, TypedTransaction::Midl(_));
 
         // Set gas to estimated value only if it was not set by the caller,
         // even if the access list has been populated and saves gas
         if tx.gas().is_none() {
-            let gas_estimate = self.estimate_gas(tx, block).await?;
-            tx.set_gas(gas_estimate);
+            if is_midl {
+                tx.set_gas(MIDL_DEFAULT_GAS_LIMIT);
+            } else {
+                let gas_estimate = self.estimate_gas(tx, block).await?;
+                tx.set_gas(gas_estimate);
+            }
         }
 
         Ok(())
@@ -627,6 +642,33 @@ impl<P: JsonRpcClient> Middleware for Provider<P> {
         let rlp = utils::serialize(&tx);
         let tx_hash = self.request("eth_sendRawTransaction", [rlp]).await?;
         Ok(PendingTransaction::new(tx_hash, self))
+    }
+
+    /// Sends one or more Midl transactions alongside the funding BTC transaction hex.
+    async fn send_btc_transactions<'a>(
+        &'a self,
+        serialized_transactions: Vec<Bytes>,
+        btc_transaction: Bytes,
+    ) -> Result<Vec<PendingTransaction<'a, P>>, ProviderError> {
+        if serialized_transactions.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let serialized_transactions = serialized_transactions
+            .into_iter()
+            .map(|tx| utils::serialize(&tx))
+            .collect::<Vec<_>>();
+        let btc_transaction_hex = hex::encode(btc_transaction.as_ref());
+        let params = [
+            Value::Array(serialized_transactions),
+            Value::String(btc_transaction_hex),
+        ];
+        let tx_hashes: Vec<TxHash> =
+            self.request("eth_sendBTCTransactions", params).await?;
+        Ok(tx_hashes
+            .into_iter()
+            .map(|hash| PendingTransaction::new(hash, self))
+            .collect())
     }
 
     /// The JSON-RPC provider is at the bottom-most position in the middleware stack. Here we check

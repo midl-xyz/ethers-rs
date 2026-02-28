@@ -86,6 +86,11 @@ where
                     }
                 }
             }
+            TypedTransaction::Midl(ref mut inner) => {
+                if inner.tx.gas_price.is_none() {
+                    inner.tx.gas_price = Some(U256::zero());
+                }
+            }
         };
         tracing::debug!(?tx, "Filled transaction");
 
